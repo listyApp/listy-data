@@ -12,7 +12,7 @@
 #
 # What is published, under gh-pages:
 #   priceIndex.v2.json   every chain's price, per store format
-#   prices/<key>.json    every branch's own prices, with the time it published them
+#   prices/<key>.json    every branch's own prices, deltas applied, with the time of the newest
 #   promotions/<key>.json   every branch's offers
 #   marketCatalog.json   every barcode the chains sell, named (rebuilt once a day)
 name: prices
@@ -82,9 +82,28 @@ jobs:
         continue-on-error: true
 
       # Every branch's own prices — what the app shows for the branch the
-      # reader chose, with the time the chain published it.
-      - name: Build every branch's prices
+      # reader chose, with the time the chain published it. Each branch is its
+      # newest full file plus every price delta the chain published after it.
+      #
+      # The last run's branch files come back from the Actions cache first, so
+      # this run reads only what was published since: without them, every run
+      # would re-read the whole day's deltas, tens of thousands of files.
+      - name: Restore the last run's branch prices
+        uses: actions/cache/restore@v4
+        with:
+          path: listy/public/prices
+          key: branch-prices-${{ github.run_id }}
+          restore-keys: branch-prices-
+
+      - name: Bring every branch's prices up to date
         run: node scripts/buildBranchPrices.js --out public/prices
+
+      - name: Keep the branch prices for the next run
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: listy/public/prices
+          key: branch-prices-${{ github.run_id }}
 
       - name: Build the offers
         run: node scripts/buildPromotions.js --out public/promotions
