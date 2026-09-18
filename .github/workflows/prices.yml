@@ -1,0 +1,129 @@
+# Builds Listy's price data every three hours and publishes it on this
+# repository's GitHub Pages (https://listyapp.github.io/listy-data/).
+#
+# **Why here and not in listyApp/listy.** The app's own repository is private,
+# and on GitHub's free plan a private repository gets 2,000 Actions minutes a
+# month. One run is about half an hour, so eight a day would need ~7,000. A
+# public repository's minutes are free and unmetered, and Pages on a public
+# repository is free too. So the *scripts* stay in the private repository —
+# they are checked out read-only with LISTY_READ_TOKEN — and only the *output*,
+# which the chains publish openly under the price-transparency law anyway, is
+# built and served from here.
+#
+# What is published, under gh-pages:
+#   priceIndex.v2.json   every chain's price, per store format
+#   prices/<key>.json    every branch's own prices, with the time it published them
+#   promotions/<key>.json   every branch's offers
+#   marketCatalog.json   every barcode the chains sell, named (rebuilt once a day)
+name: prices
+
+on:
+  schedule:
+    # Times are UTC; Israel is UTC+3 in summer, +2 in winter.
+    # The daily full run, market catalogue included, at ~07:10 Israel time.
+    - cron: '10 4 * * *'
+    # Prices, branches and offers again every three hours between.
+    - cron: '10 1,7,10,13,16,19,22 * * *'
+  workflow_dispatch:
+
+# Writes only this repository's gh-pages branch, with the built-in token.
+permissions:
+  contents: write
+
+# A run that starts while the last is still going waits for it rather than
+# racing it to the same branch.
+concurrency:
+  group: prices
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # Hundreds of files from seventeen chains' servers, each at its own pace.
+    timeout-minutes: 150
+
+    defaults:
+      run:
+        working-directory: listy
+
+    steps:
+      - name: Check out Listy's scripts
+        uses: actions/checkout@v4
+        with:
+          repository: listyApp/listy
+          token: ${{ secrets.LISTY_READ_TOKEN }}
+          path: listy
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build the index
+        run: |
+          mkdir -p public
+          node scripts/buildPriceIndex.js --branches 2 --out public/priceIndex.v2.json
+
+      # Replacing a good index with a thin one is worse than skipping a run.
+      - name: Refuse to publish an empty index
+        run: |
+          node -e "
+            const index = require('./public/priceIndex.v2.json');
+            const barcodes = Object.keys(index.prices || {}).length;
+            const chains = (index.chains || []).length;
+            console.log(barcodes + ' barcodes, ' + chains + ' chains');
+            if (barcodes < 20000 || chains < 6) {
+              console.error('Too thin to publish — leaving the previous data in place.');
+              process.exit(1);
+            }
+          "
+
+      - name: Refresh the branch directory
+        run: node scripts/fetchStores.js
+        continue-on-error: true
+
+      # Every branch's own prices — what the app shows for the branch the
+      # reader chose, with the time the chain published it.
+      - name: Build every branch's prices
+        run: node scripts/buildBranchPrices.js --out public/prices
+
+      - name: Build the offers
+        run: node scripts/buildPromotions.js --out public/promotions
+
+      # The catalogue changes slowly and costs a second full download, so it is
+      # rebuilt on the daily run (and on a run started by hand) and carried
+      # over from the published copy on the others.
+      - name: Name the market's products
+        if: github.event.schedule == '10 4 * * *' || github.event_name == 'workflow_dispatch'
+        run: node scripts/harvestMarketNames.js
+        continue-on-error: true
+
+      - name: Install the categoriser's dependencies
+        if: github.event.schedule == '10 4 * * *' || github.event_name == 'workflow_dispatch'
+        run: npm ci --ignore-scripts --no-audit --no-fund
+        continue-on-error: true
+
+      - name: Build the market catalogue
+        if: github.event.schedule == '10 4 * * *' || github.event_name == 'workflow_dispatch'
+        run: node scripts/expandCatalog.js --out public/marketCatalog.json
+        continue-on-error: true
+
+      - name: Keep the published catalogue
+        run: |
+          if [ ! -f public/marketCatalog.json ]; then
+            curl -fsSL https://listyapp.github.io/listy-data/marketCatalog.json -o public/marketCatalog.json \
+              || echo 'No published catalogue to carry over yet.'
+          fi
+
+      # One commit that replaces the last: the data is ~500 MB and changes
+      # every run, and keeping each run as history would grow this repository
+      # by gigabytes a week for files nobody reads back.
+      - name: Publish
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: listy/public
+          force_orphan: true
+          user_name: listy-bot
+          user_email: listy-bot@users.noreply.github.com
+          commit_message: Prices and offers
