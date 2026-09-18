@@ -48,13 +48,13 @@ jobs:
 
     steps:
       - name: Check out Listy's scripts
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: listyApp/listy
           token: ${{ secrets.LISTY_READ_TOKEN }}
           path: listy
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
 
