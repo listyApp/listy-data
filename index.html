@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
+    <!--
+      interactive-widget=resizes-content (the owner's fifty-sixth review): on a
+      phone's browser the keyboard shrinks the page instead of covering it, so
+      the header stays put and a sheet or the composer sits above the keys.
+      Without it Chrome on Android keeps the page full height, scrolls the
+      whole thing up under the keyboard, and the header leaves the screen.
+    -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, interactive-widget=resizes-content" />
+    <title>Listy</title>
+    <!-- The `react-native-web` recommended style reset: https://necolas.github.io/react-native-web/docs/setup/#root-element -->
+    <style id="expo-reset">
+      /* These styles make the body full-height */
+      html,
+      body {
+        height: 100%;
+      }
+      /* These styles disable body scrolling if you are using <ScrollView> */
+      body {
+        overflow: hidden;
+      }
+      /*
+       * The app's frame is pinned to the screen (the owner's fifty-eighth
+       * review): it never scrolls with the page or moves as the browser's
+       * address bar slides in and out, so a form's bottom bar stays at the
+       * bottom. Only the app's own lists scroll, inside it.
+       */
+      #root {
+        display: flex;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        flex: 1;
+      }
+    </style>
+  </head>
+
+  <body>
+    <noscript>
+      You need to enable JavaScript to run this app.
+    </noscript>
+    <div id="root"></div>
+  </body>
+</html>
